@@ -30,8 +30,16 @@ The event contains only actor object ID, template ID/version, event ID, outcome,
 
 The Functions routes use `authLevel: "anonymous"` because App Service Easy Auth is the authentication boundary. Azure must require authentication (`requireAuthentication: true`) and return 401 for unauthenticated requests; the handlers trust `x-ms-client-principal` only because Easy Auth validates and injects it. A unit test verifies those settings remain in `infra/main.bicep`; also verify the deployed Function App configuration before exposing the API.
 
-### Request size limit
+## Corporate image assets
 
-The handler rejects a declared `Content-Length` above 4 KiB and independently stops reading once the actual streamed body exceeds 4 KiB. Keep an ingress-level request limit as defense in depth when exposing the endpoint.
+- `GET /api/images` lists image metadata for callers with the delegated `Templates.Read` scope.
+- `GET /api/images/{assetId}` returns the private image bytes; `?thumbnail=1` returns a reduced preview.
+- `POST /api/images` accepts raw image bytes and an encoded `X-File-Name` header. It requires `Templates.Read` and the `Signature.TemplateAdmin` app role.
+- Upload bytes are limited to 1 MiB while streaming. The API detects and decodes the actual file content, accepts static PNG/JPEG only, rejects dimensions above 1600 × 1200, re-encodes the image to strip metadata, and writes it to the private Blob container using managed identity. Cosmos stores the immutable asset ID and display metadata; clients never receive Blob credentials or direct Blob URLs.
+- Blob bytes and metadata are persistent. Template document publishing is not yet implemented, so editor template data remains in portal memory; a template persistence API must store the asset IDs in sanitized HTML before templates themselves survive reloads.
 
-The Outlook add-in sender, retry/outbox mechanism, template/image routes, and authorized audit reporting view remain to be implemented. Unit tests cover claim and payload validation; Cosmos/Easy Auth integration tests require a deployed test environment.
+### Audit request size limit
+
+The audit handler rejects a declared `Content-Length` above 4 KiB and independently stops reading once the actual streamed body exceeds 4 KiB. Image uploads have their separate 1 MiB streaming limit. Keep an ingress-level request limit as defense in depth when exposing the endpoints.
+
+The Outlook add-in sender, retry/outbox mechanism, published-template routes, and authorized audit reporting view remain to be implemented. Unit tests cover claim, image validation, and payload validation; Blob/Cosmos/Easy Auth integration tests require a deployed test environment.

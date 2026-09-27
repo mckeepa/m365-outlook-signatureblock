@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronLeft,
@@ -13,15 +13,31 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import DOMPurify from "dompurify";
 import {
   chooseSignatureTemplate,
   renderSignature,
   type SignatureProfile,
   type SignatureTemplate,
 } from "@signature/signature-core";
-import { entraConfigured, signaturePreferenceApiConfigured } from "./entraConfig.js";
-import type { SignedInProfile, UserSignaturePreference } from "./entraProfile.js";
+import {
+  entraConfigured,
+  signatureImageApiConfigured,
+  signaturePreferenceApiConfigured,
+} from "./entraConfig.js";
+import {
+  loadUserSignaturePreference,
+  loadFullSignatureImage,
+  loadSignatureImageLibrary,
+  saveUserSignaturePreference,
+  signInAndReadProfile,
+  trySilentSignInAndReadProfile,
+  uploadSignatureImage,
+  type SignatureImageAsset,
+  type SignedInProfile,
+  type UserSignaturePreference,
+} from "./entraProfile.js";
+import { hydrateSignatureImages } from "./signatureImages.js";
+import { sanitizeSignatureHtml } from "./sanitizeSignatureHtml.js";
 
 const TemplateEditor = lazy(() => import("./TemplateEditor.js"));
 
@@ -73,6 +89,8 @@ function eligibleForProfile(template: SignatureTemplate, profile: SignatureProfi
 
 export default function App() {
   const [templates, setTemplates] = useState(initialTemplates);
+  const [imageLibrary, setImageLibrary] = useState<SignatureImageAsset[]>([]);
+  const imageLibraryRef = useRef<SignatureImageAsset[]>([]);
   const [favorites, setFavorites] = useState<string[]>(["operations-leadership"]);
   const [activeView, setActiveView] = useState<View>("templates");
   const [editing, setEditing] = useState<SignatureTemplate | null>(null);
@@ -87,8 +105,23 @@ export default function App() {
   const [selectedPreviewId, setSelectedPreviewId] = useState("corporate-default");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
+  useEffect(() => () => {
+    imageLibraryRef.current.forEach((asset) => URL.revokeObjectURL(asset.previewUrl));
+  }, []);
+
+  function replaceImageLibrary(images: SignatureImageAsset[]) {
+    imageLibraryRef.current.forEach((asset) => URL.revokeObjectURL(asset.previewUrl));
+    imageLibraryRef.current = images;
+    setImageLibrary(images);
+  }
+
   function applyPreference(preference: UserSignaturePreference | null) {
     setSelectedTemplateId(preference?.selectedTemplateId ?? null);
+    setSelectedPreviewId(
+      preference?.selectedTemplateId ??
+      templates.find((template) => template.isDefault)?.id ??
+      "",
+    );
   }
 
   useEffect(() => {
@@ -107,19 +140,25 @@ export default function App() {
 
     let active = true;
     setAuthBusy(true);
-    void import("./entraProfile.js")
-      .then(async ({ trySilentSignInAndReadProfile, loadUserSignaturePreference }) => {
-        const profile = await trySilentSignInAndReadProfile();
-        if (!profile || !active) return;
-        setSignedIn(profile);
-        setSelectedPreviewId("");
+    void (async () => {
+      const profile = await trySilentSignInAndReadProfile();
+      if (!profile || !active) return;
+      setSignedIn(profile);
+      setSelectedPreviewId("");
+      try {
+        applyPreference(await loadUserSignaturePreference());
+      } catch {
+        applyPreference(null);
+        setAuthError("Your profile loaded, but the saved signature choice could not be reached.");
+      }
+      if (signatureImageApiConfigured) {
         try {
-          applyPreference(await loadUserSignaturePreference());
-        } catch {
-          applyPreference(null);
-          setAuthError("Your profile loaded, but the saved signature choice could not be reached.");
+          replaceImageLibrary(await loadSignatureImageLibrary());
+        } catch (error) {
+          setAuthError(error instanceof Error ? error.message : "Corporate images could not be loaded.");
         }
-      })
+      }
+    })()
       .catch((error: unknown) => {
         if (active) {
           setAuthError(error instanceof Error ? error.message : "Automatic Entra sign-in failed.");
@@ -173,6 +212,26 @@ export default function App() {
     setNotice("Changes are saved in this prototype session only.");
   }
 
+  function addImageAsset(asset: SignatureImageAsset) {
+    const images = [...imageLibraryRef.current, asset];
+    imageLibraryRef.current = images;
+    setImageLibrary(images);
+  }
+
+  async function getFullImageUrl(assetId: string): Promise<string> {
+    const current = imageLibraryRef.current.find((asset) => asset.id === assetId);
+    if (!current) throw new Error("This image is no longer in the corporate image library.");
+    if (current.imageUrl) return current.imageUrl;
+
+    const imageUrl = await loadFullSignatureImage(assetId);
+    const images = imageLibraryRef.current.map((asset) =>
+      asset.id === assetId ? { ...asset, imageUrl } : asset,
+    );
+    imageLibraryRef.current = images;
+    setImageLibrary(images);
+    return imageUrl;
+  }
+
   function setDefault(templateId: string) {
     setTemplates((current) =>
       current.map((template) => ({
@@ -195,7 +254,6 @@ export default function App() {
     setAuthBusy(true);
     setAuthError("");
     try {
-      const { loadUserSignaturePreference, signInAndReadProfile } = await import("./entraProfile.js");
       const result = await signInAndReadProfile(switchAccount);
       setSignedIn(result);
       setSelectedPreviewId("");
@@ -215,7 +273,13 @@ export default function App() {
 
   async function setUserDefault(templateId: string | null) {
     const previousTemplateId = selectedTemplateId;
+    const previousPreviewId = selectedPreviewId;
     setSelectedTemplateId(templateId);
+    setSelectedPreviewId(
+      templateId ??
+      templates.find((template) => template.isDefault)?.id ??
+      "",
+    );
     setNotice("");
 
     if (!signedIn) return;
@@ -226,11 +290,11 @@ export default function App() {
 
     setPreferenceBusy(true);
     try {
-      const { saveUserSignaturePreference } = await import("./entraProfile.js");
       applyPreference(await saveUserSignaturePreference(templateId));
       setNotice(templateId ? "Default signature saved for Outlook." : "Using the organization default in Outlook.");
     } catch (error) {
       setSelectedTemplateId(previousTemplateId);
+      setSelectedPreviewId(previousPreviewId);
       setAuthError(error instanceof Error ? error.message : "Unable to save your Outlook signature choice.");
     } finally {
       setPreferenceBusy(false);
@@ -322,8 +386,15 @@ export default function App() {
         {editing ? (
           <Suspense fallback={<p className="editor-loading">Loading signature editor…</p>}>
             <TemplateEditor
+              imageLibrary={imageLibrary}
               key={editing.id}
               onCancel={() => setEditing(null)}
+              onImageUpload={async (file) => {
+                const asset = await uploadSignatureImage(file);
+                addImageAsset(asset);
+                return asset;
+              }}
+              onImageSelect={getFullImageUrl}
               onSave={saveTemplate}
               template={editing}
             />
@@ -433,7 +504,11 @@ export default function App() {
                         type="button"
                       >
                         <span className="choice-icon"><FileSignature size={17} /></span>
-                        <span className="choice-copy"><strong>{template.name}</strong><small>{template.isDefault ? "Organization default" : template.eligibleDepartments?.join(", ") ?? "Available to all"}</small></span>
+                        <span className="choice-copy">
+                          <strong>{template.name}</strong>
+                          <small>{template.eligibleDepartments?.join(", ") ?? "Available to all"}</small>
+                        </span>
+                        {template.isDefault ? <span className="organization-default-badge">ORG DEFAULT</span> : null}
                       </button>
                       <button
                         aria-pressed={favorites.includes(template.id)}
@@ -443,21 +518,24 @@ export default function App() {
                         type="button"
                       ><Star size={15} /> <span>{favorites.includes(template.id) ? "Saved" : "Save"}</span></button>
                       <button
-                        aria-label={`Use ${template.name} by default`}
+                        aria-label={activeChoice?.id === template.id ? `${template.name} is selected` : `Select ${template.name}`}
                         aria-pressed={activeChoice?.id === template.id}
-                        className={`radio-choice ${activeChoice?.id === template.id ? "is-selected" : ""}`}
+                        className={`select-template-button ${activeChoice?.id === template.id ? "is-selected" : ""}`}
                         disabled={preferenceBusy}
                         onClick={() => void setUserDefault(template.id)}
-                        title="Use for new messages"
                         type="button"
-                      >{activeChoice?.id === template.id ? <Check size={12} /> : null}</button>
+                      >{activeChoice?.id === template.id ? <><Check size={13} /> Selected</> : "Select"}</button>
                     </div>
                   ))}
                   {eligible.length === 0 ? <p className="empty-state">No signatures are assigned to your current profile.</p> : null}
                 </div>
                 <div className="list-footnote"><ShieldCheck size={15} /> {signaturePreferenceApiConfigured ? "Your selected template ID is saved to your work profile." : "Your selection is session-only until the template preference API is configured."} This list does not read Outlook's native signature settings.</div>
               </div>
-              <SignaturePreview template={selectedPreview} profile={signedIn.profile} />
+              <SignaturePreview
+                imageLibrary={imageLibrary}
+                template={selectedPreview}
+                profile={signedIn.profile}
+              />
             </div>
             </>
             )}
@@ -474,16 +552,19 @@ export default function App() {
 function SignaturePreview({
   template,
   profile,
+  imageLibrary,
 }: {
   template: SignatureTemplate | undefined;
   profile: SignatureProfile;
+  imageLibrary: SignatureImageAsset[];
 }) {
   const html = template
-    ? DOMPurify.sanitize(renderSignature(template, profile), {
-      ALLOWED_ATTR: ["href", "title", "target", "rel"],
-      FORBID_TAGS: ["img", "iframe", "object", "embed", "svg", "style"],
-      ALLOWED_URI_REGEXP: /^(?:(?:https|mailto):)/i,
-    })
+    ? sanitizeSignatureHtml(
+      hydrateSignatureImages(renderSignature(template, profile), imageLibrary),
+      new Set(imageLibrary.flatMap((asset) =>
+        [asset.previewUrl, ...(asset.imageUrl ? [asset.imageUrl] : [])],
+      )),
+    )
     : "";
 
   return (

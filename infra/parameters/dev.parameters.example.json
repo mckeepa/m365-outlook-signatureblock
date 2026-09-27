@@ -5,8 +5,11 @@
     "location": {
       "value": "australiaeast"
     },
+    "staticWebAppLocation": {
+      "value": "eastasia"
+    },
     "namingPrefix": {
-      "value": "sigdev"
+      "value": "sigd"
     },
     "entraTenantId": {
       "value": "00000000-0000-0000-0000-000000000000"

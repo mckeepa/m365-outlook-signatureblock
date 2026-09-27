@@ -5,6 +5,7 @@ import {
   AuditRequestError,
   createApplicationRecord,
   getAuditActor,
+  getTemplateAdminObjectId,
   MAX_AUDIT_REQUEST_BYTES,
   parseLimitedJsonBody,
   validateApplicationRequest,
@@ -54,6 +55,26 @@ test("rejects a different tenant and a token without Templates.Read", () => {
   assert.throws(() => getAuditActor(missingScope, tenantId), AuditRequestError);
 });
 
+test("requires the template administrator app role to upload assets", () => {
+  const reader = encodePrincipal([
+    { typ: "tid", val: tenantId },
+    { typ: "oid", val: objectId },
+    { typ: "scp", val: "Templates.Read" },
+  ]);
+  const admin = encodePrincipal([
+    { typ: "tid", val: tenantId },
+    { typ: "oid", val: objectId },
+    { typ: "scp", val: "Templates.Read" },
+    { typ: "roles", val: "Signature.TemplateAdmin" },
+  ]);
+
+  assert.throws(
+    () => getTemplateAdminObjectId(reader, tenantId),
+    (error: unknown) => error instanceof AuditRequestError && error.statusCode === 403,
+  );
+  assert.equal(getTemplateAdminObjectId(admin, tenantId), objectId);
+});
+
 test("accepts only the minimal audit event fields and ignores supplied identity", () => {
   const event = validateApplicationRequest({
     eventId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
@@ -101,7 +122,7 @@ test("rejects oversized streamed bodies even when Content-Length is not availabl
 
   await assert.rejects(
     parseLimitedJsonBody(stream),
-    (error: unknown) => error instanceof AuditRequestError && error.statusCode === 400,
+    (error: unknown) => error instanceof AuditRequestError && error.statusCode === 413,
   );
 });
 

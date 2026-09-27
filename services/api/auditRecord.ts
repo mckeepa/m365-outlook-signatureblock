@@ -25,7 +25,7 @@ interface EasyAuthPrincipal {
 export class AuditRequestError extends Error {
   constructor(
     message: string,
-    readonly statusCode: 400 | 401 | 403,
+    readonly statusCode: 400 | 401 | 403 | 404 | 413 | 415,
   ) {
     super(message);
   }
@@ -44,11 +44,12 @@ interface LimitedRequestBody {
   getReader(): LimitedBodyReader;
 }
 
-export async function parseLimitedJsonBody(
+export async function readLimitedBody(
   body: LimitedRequestBody | null,
-): Promise<unknown> {
+  maxBytes: number,
+): Promise<Uint8Array> {
   if (!body) {
-    throw new AuditRequestError("The request must contain a valid JSON audit event.", 400);
+    throw new AuditRequestError("The request body is required.", 400);
   }
 
   const reader = body.getReader();
@@ -60,18 +61,18 @@ export async function parseLimitedJsonBody(
       const { done, value } = await reader.read();
       if (done) break;
       if (!value) {
-        throw new AuditRequestError("The request must contain a valid JSON audit event.", 400);
+        throw new AuditRequestError("The request body is invalid.", 400);
       }
       byteLength += value.byteLength;
-      if (byteLength > MAX_AUDIT_REQUEST_BYTES) {
+      if (byteLength > maxBytes) {
         await reader.cancel();
-        throw new AuditRequestError("The audit event is too large.", 400);
+        throw new AuditRequestError("The request body is too large.", 413);
       }
       chunks.push(value);
     }
   } catch (error) {
     if (error instanceof AuditRequestError) throw error;
-    throw new AuditRequestError("The request must contain a valid JSON audit event.", 400);
+    throw new AuditRequestError("The request body is invalid.", 400);
   } finally {
     reader.releaseLock();
   }
@@ -83,18 +84,22 @@ export async function parseLimitedJsonBody(
     offset += chunk.byteLength;
   }
 
+  return bytes;
+}
+
+export async function parseLimitedJsonBody(
+  body: LimitedRequestBody | null,
+): Promise<unknown> {
   try {
+    const bytes = await readLimitedBody(body, MAX_AUDIT_REQUEST_BYTES);
     return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-  } catch {
+  } catch (error) {
+    if (error instanceof AuditRequestError && error.statusCode === 413) throw error;
     throw new AuditRequestError("The request must contain a valid JSON audit event.", 400);
   }
 }
 
-export function getAuthenticatedUserObjectId(
-  encodedPrincipal: string | null,
-  expectedTenantId: string,
-  requiredScope: string,
-): string {
+function getEasyAuthPrincipal(encodedPrincipal: string | null): EasyAuthPrincipal {
   if (!encodedPrincipal) {
     throw new AuditRequestError("Authentication is required.", 401);
   }
@@ -109,7 +114,15 @@ export function getAuthenticatedUserObjectId(
   if (principal.auth_typ?.toLowerCase() !== "aad") {
     throw new AuditRequestError("An Entra-authenticated user is required.", 401);
   }
+  return principal;
+}
 
+export function getAuthenticatedUserObjectId(
+  encodedPrincipal: string | null,
+  expectedTenantId: string,
+  requiredScope: string,
+): string {
+  const principal = getEasyAuthPrincipal(encodedPrincipal);
   const claims = principal.claims ?? [];
   const claim = (...names: string[]) =>
     claims.find((entry) => entry.typ && names.includes(entry.typ.toLowerCase()))?.val;
@@ -128,6 +141,28 @@ export function getAuthenticatedUserObjectId(
   }
 
   return objectId.toLowerCase();
+}
+
+export function getTemplateAdminObjectId(
+  encodedPrincipal: string | null,
+  expectedTenantId: string,
+): string {
+  const userObjectId = getAuthenticatedUserObjectId(
+    encodedPrincipal,
+    expectedTenantId,
+    "Templates.Read",
+  );
+  const claims = getEasyAuthPrincipal(encodedPrincipal).claims ?? [];
+  const hasTemplateAdminRole = claims.some((claim) =>
+    claim.typ &&
+    ["roles", "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"].includes(claim.typ.toLowerCase()) &&
+    claim.val === "Signature.TemplateAdmin",
+  );
+  if (!hasTemplateAdminRole) {
+    throw new AuditRequestError("The Signature.TemplateAdmin role is required.", 403);
+  }
+
+  return userObjectId;
 }
 
 export function getAuditActor(encodedPrincipal: string | null, expectedTenantId: string): string {

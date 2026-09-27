@@ -1,7 +1,10 @@
 targetScope = 'resourceGroup'
 
-@description('Azure region for the resource group resources. Choose a region supported by Static Web Apps.')
+@description('Azure region for most resource group resources (Function App, Cosmos DB, Storage, VNet, Log Analytics).')
 param location string
+
+@description('Azure region for the Static Web App. Static Web Apps Standard is only available in a small subset of regions (centralus, eastus2, westus2, westeurope, eastasia), which may differ from "location".')
+param staticWebAppLocation string = 'eastasia'
 
 @description('Short lowercase prefix used in globally unique resource names.')
 @minLength(3)
@@ -46,7 +49,7 @@ var appInsightsName = '${namingPrefix}-${suffix}-insights'
 var logWorkspaceName = '${namingPrefix}-${suffix}-logs'
 var vnetName = '${namingPrefix}-${suffix}-vnet'
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
-var storageBlobDataOwnerRoleId = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var storageQueueDataContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var privateDnsZoneNames = [
@@ -141,14 +144,16 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 
 resource staticWebApp 'Microsoft.Web/staticSites@2022-09-01' = {
   name: staticAppName
-  location: location
+  location: staticWebAppLocation
   tags: tags
   sku: {
     name: 'Standard'
     tier: 'Standard'
   }
   properties: {
-    allowConfigFileUpdates: false
+    // Must be true: false blocks every deployment that includes staticwebapp.config.json,
+    // including the first one, since the routing/auth config ships with each build.
+    allowConfigFileUpdates: true
     stagingEnvironmentPolicy: 'Enabled'
   }
 }
@@ -422,6 +427,22 @@ resource userPreferencesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlData
   }
 }
 
+resource signatureImagesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = {
+  parent: cosmosDatabase
+  name: 'SignatureImages'
+  properties: {
+    resource: {
+      id: 'SignatureImages'
+      partitionKey: {
+        paths: [
+          '/id'
+        ]
+        kind: 'Hash'
+      }
+    }
+  }
+}
+
 resource cosmosDataContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
   parent: cosmosAccount
   name: guid(cosmosAccount.id, functionAppName, cosmosDataContributorRoleId)
@@ -432,11 +453,11 @@ resource cosmosDataContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAss
   }
 }
 
-resource storageBlobDataOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(blobStorage.id, functionAppName, storageBlobDataOwnerRoleId)
+resource storageBlobDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(blobStorage.id, functionAppName, storageBlobDataContributorRoleId)
   scope: blobStorage
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwnerRoleId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
     principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
   }

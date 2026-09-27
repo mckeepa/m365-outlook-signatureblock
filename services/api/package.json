@@ -12,7 +12,9 @@
   "dependencies": {
     "@azure/cosmos": "^4.10.1",
     "@azure/functions": "^4.16.5",
-    "@azure/identity": "^4.13.3"
+    "@azure/identity": "^4.13.3",
+    "@azure/storage-blob": "^12.34.0",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",

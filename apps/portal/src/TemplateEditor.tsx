@@ -1,8 +1,9 @@
-import { useState, type FormEvent, type MouseEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent } from "react";
 import {
   Bold,
   Check,
   ChevronLeft,
+  ImagePlus,
   Italic,
   Link2,
   List,
@@ -10,8 +11,8 @@ import {
   ShieldCheck,
   Underline as UnderlineIcon,
 } from "lucide-react";
-import DOMPurify from "dompurify";
 import { EditorContent, useEditor } from "@tiptap/react";
+import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
@@ -20,6 +21,11 @@ import {
   type SignatureProfile,
   type SignatureTemplate,
 } from "@signature/signature-core";
+import type { SignatureImageAsset } from "./entraProfile.js";
+import { hydrateSignatureImages, serializeSignatureImages } from "./signatureImages.js";
+import { sanitizeSignatureHtml } from "./sanitizeSignatureHtml.js";
+
+const MAX_IMAGE_BYTES = 1024 * 1024;
 
 const previewProfile: SignatureProfile = {
   displayName: "Jordan Lee",
@@ -37,6 +43,20 @@ const editorExtensions = [
     openOnClick: false,
     protocols: ["https", "mailto"],
   }),
+  Image.extend({
+    addAttributes() {
+      return {
+        ...this.parent?.(),
+        assetId: {
+          default: null,
+          parseHTML: (element) => element.getAttribute("data-asset-id"),
+          renderHTML: (attributes) => attributes.assetId
+            ? { "data-asset-id": attributes.assetId }
+            : {},
+        },
+      };
+    },
+  }).configure({ allowBase64: false, inline: true }),
   Underline,
 ];
 
@@ -48,20 +68,18 @@ const profileFields = [
   ["Phone", "{{businessPhone}}"],
 ] as const;
 
-function sanitizePreview(html: string) {
-  return DOMPurify.sanitize(html, {
-    ALLOWED_ATTR: ["href", "title", "target", "rel"],
-    FORBID_TAGS: ["img", "iframe", "object", "embed", "svg", "style"],
-    ALLOWED_URI_REGEXP: /^(?:(?:https|mailto):)/i,
-  });
-}
-
 export default function TemplateEditor({
   template,
+  imageLibrary,
+  onImageUpload,
+  onImageSelect,
   onCancel,
   onSave,
 }: {
   template: SignatureTemplate;
+  imageLibrary: SignatureImageAsset[];
+  onImageUpload: (file: File) => Promise<SignatureImageAsset>;
+  onImageSelect: (assetId: string) => Promise<string>;
   onCancel: () => void;
   onSave: (template: SignatureTemplate) => void;
 }) {
@@ -71,14 +89,44 @@ export default function TemplateEditor({
   const [isDefault, setIsDefault] = useState(template.isDefault);
   const [html, setHtml] = useState(template.html);
   const [linkError, setLinkError] = useState("");
+  const [imageError, setImageError] = useState("");
+  const [imageBusyId, setImageBusyId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const allowedImageSources = new Set(imageLibrary.flatMap((asset) =>
+    [asset.previewUrl, ...(asset.imageUrl ? [asset.imageUrl] : [])],
+  ));
   const editor = useEditor({
     extensions: editorExtensions,
-    content: template.html,
-    editorProps: { attributes: { "aria-label": "Signature rich text editor" } },
-    onUpdate: ({ editor: currentEditor }) => setHtml(currentEditor.getHTML()),
+    content: sanitizeSignatureHtml(
+      hydrateSignatureImages(template.html, imageLibrary),
+      allowedImageSources,
+    ),
+    editorProps: {
+      attributes: { "aria-label": "Signature rich text editor" },
+      transformPastedHTML: (html) => sanitizeSignatureHtml(html),
+      handleDrop: (view, event) => {
+        const file = Array.from(event.dataTransfer?.files ?? []).find((item) =>
+          item.type === "image/png" || item.type === "image/jpeg",
+        );
+        if (!file) return false;
+
+        event.preventDefault();
+        const position = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+        void uploadImageFile(file, position);
+        return true;
+      },
+    },
+    onUpdate: ({ editor: currentEditor }) =>
+      setHtml(serializeSignatureImages(currentEditor.getHTML())),
   });
 
-  const rendered = sanitizePreview(renderSignature({ ...template, html }, previewProfile));
+  const rendered = sanitizeSignatureHtml(
+    renderSignature({
+      ...template,
+      html: hydrateSignatureImages(html, imageLibrary),
+    }, previewProfile),
+    allowedImageSources,
+  );
 
   function preserveEditorFocus(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -101,6 +149,57 @@ export default function TemplateEditor({
     setLinkError("");
   }
 
+  async function uploadImageFile(file: File, position?: number) {
+    setImageError("");
+
+    const mimeType = file.type.toLowerCase();
+    if (mimeType !== "image/png" && mimeType !== "image/jpeg") {
+      setImageError("Choose a PNG or JPEG image.");
+      return;
+    }
+    if (file.size < 1 || file.size > MAX_IMAGE_BYTES) {
+      setImageError("Images must be smaller than 1 MB.");
+      return;
+    }
+
+    try {
+      const asset = await onImageUpload(file);
+      await insertImage(asset, position);
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "The image upload failed.");
+    }
+  }
+
+  async function insertImage(asset: SignatureImageAsset, position?: number) {
+    setImageBusyId(asset.id);
+    setImageError("");
+    try {
+      const imageUrl = asset.imageUrl ?? await onImageSelect(asset.id);
+      const imageNode = {
+        type: "image",
+        attrs: {
+          src: imageUrl,
+          alt: asset.name,
+          title: asset.name,
+          assetId: asset.id,
+        },
+      };
+      if (position === undefined) editor?.chain().focus().insertContent(imageNode).run();
+      else editor?.chain().insertContentAt(position, imageNode).run();
+      setHtml(serializeSignatureImages(editor?.getHTML() ?? html));
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "Unable to load the selected corporate image.");
+    } finally {
+      setImageBusyId(null);
+    }
+  }
+
+  async function uploadImage(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (file) await uploadImageFile(file);
+  }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const departments = departmentText.split(",").map((item) => item.trim()).filter(Boolean);
@@ -108,7 +207,7 @@ export default function TemplateEditor({
     onSave({
       ...template,
       name: name.trim(),
-      html: editor?.getHTML() ?? html,
+      html: serializeSignatureImages(editor?.getHTML() ?? html),
       isDefault,
       ...(departments.length ? { eligibleDepartments: departments } : { eligibleDepartments: undefined }),
       ...(jobTitles.length ? { eligibleJobTitles: jobTitles } : { eligibleJobTitles: undefined }),
@@ -153,6 +252,48 @@ export default function TemplateEditor({
             {profileFields.map(([label, token]) => (
               <button className="field-chip" key={token} onClick={() => editor?.chain().focus().insertContent(token).run()} onMouseDown={preserveEditorFocus} title={`Insert ${label}`} type="button">{label}</button>
             ))}
+          </div>
+          <div className="image-library" aria-label="Corporate image library">
+            <div className="image-library-heading">
+              <div>
+                <strong>Corporate images</strong>
+                <span>Upload PNG/JPEG or drag an image onto the signature editor to insert it there.</span>
+              </div>
+              <button
+                className="secondary-button image-upload-button"
+                onClick={() => fileInputRef.current?.click()}
+                onMouseDown={preserveEditorFocus}
+                type="button"
+              ><ImagePlus size={14} /> Upload image</button>
+              <input
+                accept="image/png,image/jpeg"
+                aria-label="Upload a corporate PNG or JPEG image"
+                className="visually-hidden"
+                onChange={(event) => void uploadImage(event)}
+                ref={fileInputRef}
+                type="file"
+              />
+            </div>
+            <p className="image-library-note">Images are stored in the organization’s private image library. Upload permission is restricted to template administrators.</p>
+            {imageError ? <p className="field-error" role="alert">{imageError}</p> : null}
+            {imageLibrary.length ? (
+              <div className="image-library-grid">
+                {imageLibrary.map((asset) => (
+                  <button
+                    className="image-asset"
+                    disabled={imageBusyId === asset.id}
+                    key={asset.id}
+                    onClick={() => void insertImage(asset)}
+                    onMouseDown={preserveEditorFocus}
+                    title={`Insert ${asset.name}`}
+                    type="button"
+                  >
+                    <img alt="" src={asset.previewUrl} />
+                    <span>{asset.name}</span>
+                  </button>
+                ))}
+              </div>
+            ) : <p className="image-library-empty">No images uploaded yet.</p>}
           </div>
           <div className="editor-frame"><EditorContent editor={editor} /></div>
           {linkError ? <p className="field-error" role="alert">{linkError}</p> : null}

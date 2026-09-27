@@ -113,11 +113,13 @@ h1 { margin-bottom: 7px; font-size: 25px; line-height: 1.2; font-weight: 600; le
 .choice-select { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; min-height: 58px; padding: 7px 8px; border: 0; background: transparent; text-align: left; cursor: pointer; }
 .choice-select:hover .choice-copy strong { color: var(--green-dark); }
 .choice-copy { flex: 1; }
+.organization-default-badge { flex: 0 0 auto; padding: 4px 6px; border: 1px solid #e9ddc6; border-radius: 3px; background: #fffaf1; color: #8e6d32; font-size: 7px; font-weight: 700; letter-spacing: .06em; }
 .favorite-button { display: inline-flex; align-items: center; gap: 5px; min-height: 29px; padding: 0 8px; border: 1px solid #e0e6e2; border-radius: 4px; background: white; color: #77837c; font-size: 9px; cursor: pointer; }
 .favorite-button.is-favorite { border-color: #eadfca; background: #fffaf1; color: #94702e; }
 .favorite-button.is-favorite svg { fill: #ead39e; }
-.radio-choice { display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid #bdc8c1; border-radius: 50%; background: white; color: white; cursor: pointer; }
-.radio-choice.is-selected { border-color: var(--green); background: var(--green); }
+.select-template-button { display: inline-flex; justify-content: center; align-items: center; gap: 4px; min-height: 30px; padding: 0 9px; border: 1px solid #cfdad3; border-radius: 4px; background: white; color: #4d6559; font-size: 9px; font-weight: 600; cursor: pointer; }
+.select-template-button:hover:not(:disabled) { border-color: #9ebfac; background: #f5faf7; }
+.select-template-button.is-selected { border-color: var(--green); background: var(--green); color: white; }
 .profile-gate { display: flex; align-items: center; gap: 13px; min-height: 108px; margin: 3px 0 28px; padding: 17px; border: 1px solid var(--line); border-radius: 5px; background: white; }
 .profile-gate-icon { display: grid; place-items: center; width: 37px; height: 37px; flex: 0 0 auto; border-radius: 50%; background: #edf5f0; color: var(--green); }
 .profile-gate > div { min-width: 0; flex: 1; }
@@ -176,11 +178,26 @@ h1 { margin-bottom: 7px; font-size: 25px; line-height: 1.2; font-weight: 600; le
 .toolbar-hint { padding: 0 4px; color: #89958e; font-size: 8px; }
 .field-chip { min-height: 24px; padding: 0 6px; border: 1px solid #dfe8e2; border-radius: 3px; background: #f4f8f5; color: #476258; font-size: 8px; cursor: pointer; }
 .field-chip:hover { border-color: #b6d3c4; background: #e9f4ed; }
+.image-library { padding: 10px; border: 1px solid #dfe6e1; border-bottom: 0; background: #f9fbf9; }
+.image-library-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.image-library-heading > div { display: grid; gap: 3px; }
+.image-library-heading strong { color: #46544c; font-size: 9px; }
+.image-library-heading span, .image-library-note, .image-library-empty { color: #89958e; font-size: 8px; }
+.image-upload-button { min-height: 29px; font-size: 9px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+.image-library-note { margin: 7px 0 0; line-height: 1.45; }
+.image-library-empty { margin: 8px 0 0; }
+.image-library-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+.image-asset { display: grid; justify-items: center; gap: 5px; width: 76px; min-height: 72px; padding: 5px; overflow: hidden; border: 1px solid #e1e8e3; border-radius: 4px; background: white; cursor: pointer; }
+.image-asset:hover { border-color: #a7c7b4; background: #f4faf6; }
+.image-asset img { width: 56px; height: 42px; object-fit: contain; }
+.image-asset span { width: 100%; overflow: hidden; color: #69766e; text-overflow: ellipsis; white-space: nowrap; font-size: 7px; }
 .editor-frame { min-height: 240px; border: 1px solid #dfe6e1; border-radius: 0 0 4px 4px; background: white; }
 .ProseMirror { min-height: 238px; padding: 17px 16px; color: #303b35; font-size: 12px; line-height: 1.55; outline: none; }
 .ProseMirror p { margin: 0 0 8px; }
 .ProseMirror ul, .ProseMirror ol { padding-left: 22px; }
 .ProseMirror a { color: #176d5a; text-decoration: underline; text-underline-offset: 2px; }
+.ProseMirror img, .rendered-signature img, .actual-signature img { max-width: 100%; max-height: 240px; object-fit: contain; vertical-align: middle; }
 .ProseMirror > *:last-child { margin-bottom: 0; }
 .editor-footnote { display: flex; align-items: center; gap: 7px; margin-top: 11px; color: #7d8982; font-size: 9px; }
 .editor-footnote svg { flex: 0 0 auto; color: var(--green); }
