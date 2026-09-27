@@ -4,13 +4,16 @@ This document is for **Platform Administrators**: the people who deploy, monitor
 
 This document does not repeat the Entra ID app registration walkthrough (SPA/API scopes, app roles). See [README.md](README.md#prerequisites) and [apps/portal/README.md](apps/portal/README.md#register-the-portal-spa-app-registration) for that. This document assumes those app registrations already exist and focuses purely on the Azure infrastructure and application hosting.
 
+For application component responsibilities and current-versus-planned data flows, see [SolutionDesign.md](SolutionDesign.md).
+
 ## 1. Plain-language solution summary
 
-- Communications administrators use a web app (the **Portal**) to create and publish signature templates, upload corporate images, and manage per-user signature preferences.
+- Communications administrators use a web app prototype (the **Portal**) to edit sample templates, upload corporate images, and manage per-user signature preferences. Template edits are not yet published or persisted.
 - The Portal talks to a small backend (the **Template API**) running on Azure Functions. The API is the only thing allowed to read or write the database and file storage.
-- All template text/metadata and small records are stored in **Cosmos DB**. All uploaded images are stored in **Blob Storage**.
+- Image metadata, selected-template preferences, and application-audit records are stored in **Cosmos DB**. Image bytes are stored in **Blob Storage**. A Cosmos `Templates` container is provisioned, but the API does not yet persist/publish template documents.
 - The database and file storage have **no public internet access at all** — only the API, running inside a private network (VNet), can reach them. This is a deliberate security control, not a misconfiguration: if you can't `curl` Cosmos or Blob Storage from your laptop, that is correct.
 - The API authenticates every request using Microsoft Entra ID (the organization's identity provider) — it does not have its own username/password system.
+- An Outlook event-based add-in proof of concept exists, but it inserts test-only content and is not connected to templates, Graph profile data, images, preferences, or audit delivery.
 - Everything is deployed with one Bicep template ([infra/main.bicep](infra/main.bicep)) so the whole environment can be recreated, audited, or rolled back consistently.
 
 ## 2. Resource inventory
@@ -22,7 +25,7 @@ Every resource below is created by [infra/main.bicep](infra/main.bicep) into a s
 | 1 | Static Web App | `Microsoft.Web/staticSites` | Hosts the built Portal (React SPA) files and serves them over HTTPS to browsers. This is the thing Communications admins and end users open in their browser. |
 | 2 | Function App | `Microsoft.Web/sites` (kind `functionapp,linux`) | Runs the Template API code (Node.js 22, Linux). Every read/write of templates, images, and preferences goes through this. |
 | 3 | Function App's App Service Plan | `Microsoft.Web/serverfarms` (SKU `EP1`, Elastic Premium) | The compute capacity the Function App runs on. Premium plan is required because VNet integration (private networking) needs it — the free/Consumption plan can't do this. |
-| 4 | Cosmos DB account | `Microsoft.DocumentDB/databaseAccounts` | The database. Serverless mode (billed per request, not per hour). Holds templates, image metadata, per-user preferences, and audit records. |
+| 4 | Cosmos DB account | `Microsoft.DocumentDB/databaseAccounts` | The serverless database (billed per request, not per hour). It provisions containers for future templates, image metadata, per-user preferences, and audit records. Template document persistence/publication is not implemented yet. |
 | 5 | Storage account | `Microsoft.Storage/storageAccounts` (SKU `Standard_ZRS`) | Blob storage that holds the actual uploaded image bytes (PNG/JPEG), plus the Function App's own internal "AzureWebJobsStorage" housekeeping data (queues/tables). |
 | 6 | Virtual Network (VNet) | `Microsoft.Network/virtualNetworks` | A private network inside Azure. The Function App and the private endpoints (see below) all live inside this network so traffic to the database and storage never crosses the public internet. |
 | 7 | Two subnets | `Microsoft.Network/virtualNetworks/subnets` | `snet-functions` — delegated to the Function App so it can join the VNet. `snet-private-endpoints` — where the private endpoints (item 8) get their private IP addresses. |

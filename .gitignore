@@ -7,3 +7,4 @@ coverage/
 !.env.example
 infra/parameters/*.local.json
 infra/main.json
+apps/outlook-addin/local_manifest.xml

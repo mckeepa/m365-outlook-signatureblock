@@ -8,12 +8,13 @@
   "workspaces": [
     "packages/signature-core",
     "apps/portal",
+    "apps/outlook-addin",
     "services/api"
   ],
   "scripts": {
-    "build": "npm run build --workspace=@signature/signature-core && npm run build --workspace=@signature/portal && npm run build --workspace=@signature/api",
+    "build": "npm run build --workspace=@signature/signature-core && npm run build --workspace=@signature/portal && npm run build --workspace=@signature/api && npm run build --workspace=@signature/outlook-addin",
     "dev": "npm run dev --workspace=@signature/portal",
-    "test": "npm run test --workspace=@signature/signature-core && npm run test --workspace=@signature/api",
-    "typecheck": "npm run build --workspace=@signature/signature-core && npm run typecheck --workspace=@signature/portal && npm run typecheck --workspace=@signature/api"
+    "test": "npm run test --workspace=@signature/signature-core && npm run test --workspace=@signature/api && npm run test --workspace=@signature/outlook-addin",
+    "typecheck": "npm run build --workspace=@signature/signature-core && npm run typecheck --workspace=@signature/portal && npm run typecheck --workspace=@signature/api && npm run typecheck --workspace=@signature/outlook-addin"
   }
 }

@@ -25,20 +25,33 @@ if (apiUrl) {
     throw new Error("VITE_TEMPLATE_API_URL must be an HTTPS origin without a path, query, or credentials.");
   }
 
-  const directives = config.globalHeaders["Content-Security-Policy"].split("; ");
-  const connectDirectiveIndex = directives.findIndex((directive) => directive.startsWith("connect-src "));
-  if (connectDirectiveIndex === -1) {
-    throw new Error("Content Security Policy is missing its connect-src directive.");
+  function allowApiOrigin(policy) {
+    const directives = policy.split("; ");
+    const connectDirectiveIndex = directives.findIndex((directive) => directive.startsWith("connect-src "));
+    if (connectDirectiveIndex === -1) {
+      throw new Error("Content Security Policy is missing its connect-src directive.");
+    }
+    if (!directives[connectDirectiveIndex].split(/\s+/).includes(apiOrigin.origin)) {
+      directives[connectDirectiveIndex] += ` ${apiOrigin.origin}`;
+    }
+    return directives.join("; ");
   }
 
-  directives[connectDirectiveIndex] += ` ${apiOrigin.origin}`;
-  config.globalHeaders["Content-Security-Policy"] = directives.join("; ");
+  config.globalHeaders["Content-Security-Policy"] = allowApiOrigin(
+    config.globalHeaders["Content-Security-Policy"],
+  );
+  const addinRoute = config.routes?.find((route) => route.route === "/outlook-addin/*");
+  const addinPolicy = addinRoute?.headers?.["Content-Security-Policy"];
+  if (typeof addinPolicy !== "string") {
+    throw new Error("Static Web App configuration is missing the Outlook add-in route Content-Security-Policy.");
+  }
+  addinRoute.headers["Content-Security-Policy"] = allowApiOrigin(addinPolicy);
 } else {
   console.warn(
     "[configure-staticwebapp] VITE_TEMPLATE_API_URL is not set. The deployed Content-Security-Policy will " +
-      "NOT allow calls to the Template API (connect-src), so image upload/list and signature preference " +
-      "requests will be blocked by the browser. Set it in apps/portal/.env.local or the build environment " +
-      "before building if this deployment should call a live API.",
+      "NOT allow calls to the Template API (connect-src) from the Portal or Outlook add-in route, so image, " +
+      "preference, and future add-in API requests will be blocked by the browser. Set it in " +
+      "apps/portal/.env.local or the build environment before building if this deployment should call a live API.",
   );
 }
 

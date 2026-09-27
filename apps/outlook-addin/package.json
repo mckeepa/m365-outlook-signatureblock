@@ -1,0 +1,21 @@
+{
+  "name": "@signature/outlook-addin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build && node scripts/write-manifest.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@signature/signature-core": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/office-js": "^1.0.610",
+    "@types/node": "^22.13.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}

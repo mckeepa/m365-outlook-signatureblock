@@ -1,5 +1,7 @@
 # Outlook Signature Management: Security and Delivery Design
 
+For the current component inventory, dependencies, and implemented/planned sequence diagrams, see [SolutionDesign.md](SolutionDesign.md). Deployment and Azure operations are documented in [README.md](README.md) and [InfrastructureDesign.md](InfrastructureDesign.md).
+
 ## Decision
 
 **A first-party Outlook add-in is a viable alternative to a signature-management SaaS product, subject to a client-compatibility and security proof of concept.** The organization accepts a delegated, on-demand Microsoft Graph read of the signed-in user's profile. The solution will not bulk-export, background-sync, or persist Entra profile data in its service or client cache.
@@ -147,6 +149,8 @@ A production service also needs an owner for dependency updates, certificate and
 - Record client-specific gaps and performance; do not proceed on assumed cross-client parity.
 
 **Exit gate:** Required clients and compose flows pass, or stakeholders accept documented exceptions. The security team approves the data flow and permissions.
+
+**Implementation status:** The initial test-only event handler, add-in-only manifest, and build output are in [apps/outlook-addin](apps/outlook-addin/README.md). It inserts clearly marked sample content only. Manual Outlook client validation, Graph authentication, live template/cache integration, image CID handling, preference loading, and audit delivery remain incomplete.
 
 ### Phase 2: Production design and threat review
 
