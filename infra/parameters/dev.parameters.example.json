@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "australiaeast"
+    },
+    "namingPrefix": {
+      "value": "sigdev"
+    },
+    "entraTenantId": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "apiApplicationClientId": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "developmentOrigin": {
+      "value": "http://localhost:5173"
+    },
+    "vnetAddressPrefix": {
+      "value": "10.42.0.0/16"
+    },
+    "functionSubnetPrefix": {
+      "value": "10.42.1.0/24"
+    },
+    "privateEndpointSubnetPrefix": {
+      "value": "10.42.2.0/24"
+    },
+    "auditRetentionDays": {
+      "value": 365
+    }
+  }
+}

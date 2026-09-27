@@ -1,0 +1,19 @@
+{
+  "name": "outlook-signature-management",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "packages/signature-core",
+    "apps/portal",
+    "services/api"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@signature/signature-core && npm run build --workspace=@signature/portal && npm run build --workspace=@signature/api",
+    "dev": "npm run dev --workspace=@signature/portal",
+    "test": "npm run test --workspace=@signature/signature-core && npm run test --workspace=@signature/api",
+    "typecheck": "npm run build --workspace=@signature/signature-core && npm run typecheck --workspace=@signature/portal && npm run typecheck --workspace=@signature/api"
+  }
+}
