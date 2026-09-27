@@ -25,6 +25,17 @@ The template catalog/publishing API, server-side template persistence and eligib
 | `infra/main.bicep` | Azure resource definitions |
 | `scripts/` | Guarded infrastructure deployment and rollback |
 
+## Local configuration excluded from Git
+
+The following local configuration files are ignored by Git. Create and populate them when using the corresponding features:
+
+| File | When needed | How to create and populate |
+| --- | --- | --- |
+| `apps/portal/.env.local` | Optional for local preview; needed for Entra sign-in and the deployed API. | Run `cp apps/portal/.env.example apps/portal/.env.local`, then set `VITE_ENTRA_CLIENT_ID`, `VITE_ENTRA_TENANT_ID`, `VITE_TEMPLATE_API_URL`, `VITE_TEMPLATE_API_SCOPE`, and `VITE_TEMPLATE_READ_SCOPE`. These `VITE_` values are public client configuration, not secrets; never put a client secret or private key in this file. |
+| `infra/parameters/dev.parameters.local.json` | Needed for Azure deployment. | Run `cp infra/parameters/dev.parameters.example.json infra/parameters/dev.parameters.local.json`, then set the deployment region, resource naming prefix, Entra tenant and API client IDs, development origin, network ranges, and audit retention. IDs are not secrets; do not add credentials or other secrets to this file. |
+
+`apps/outlook-addin/local_manifest.xml` is an optional local manifest and may contain an environment-specific URL; it is not required for the normal build. `infra/main.json` is a generated Bicep output, not a file to create or populate manually. Build artifacts and dependencies are also ignored by Git, but do not need to be created as configuration files.
+
 For component responsibilities, dependencies, data flows, and sequence diagrams, see [SolutionDesign.md](SolutionDesign.md). For security boundaries and phased delivery decisions, see [design.md](design.md). For infrastructure resources, persisted-data access, deployment, rollback, and cleanup, see [InfrastructureDesign.md](InfrastructureDesign.md).
 
 ## Prerequisites
